@@ -12,13 +12,9 @@ The settings are self explanatory for the most part. The defaults are my setting
 
 - **Gradient**: Supports 3 char (low precision RGB), 6 char (higher precision RGB), and 8 char (ARGB) hex
 
-- **Attack & Decay**:
+- **Attack & Decay**: Attack and Decay affect how the linear interpolation functions consider new data (higher numbers mean new data is weighted higher)
 
-Attack and Decay affect how the linear interpolation functions consider new data (higher numbers mean new data is weighted higher)
-
-- **Audio Path**:
-
-Unchecking "Use CoreAudio" currently does nothing because I didn't implement the other option
+- **Audio Path**: Unchecking "Use CoreAudio" currently does nothing because I didn't implement the other option
 
 ![Settings Page](assets/settings-image.png)
 
