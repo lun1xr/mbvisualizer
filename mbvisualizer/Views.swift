@@ -292,15 +292,18 @@ struct VisualizerView: View {
     static let CIELING: CGFloat = 1.0
     var body: some View {
         let calculatedWidth = CGFloat(width - seperatorWidth * (audioManager.data.count - 1)) / CGFloat(audioManager.data.count)
-        HStack(alignment: .bottom, spacing: CGFloat(seperatorWidth)) {
-            ForEach(Array(audioManager.data.enumerated()), id: \.offset) { _, datum in
-                RoundedRectangle(cornerRadius: 1)
-                    .frame(width: calculatedWidth, height: CGFloat(min(datum*13, 13))+1)
-            }
-        }
-        .foregroundStyle(gradient)
-        .frame(minWidth: CGFloat(width), idealWidth: CGFloat(width), maxWidth: CGFloat(width), minHeight: 16, idealHeight: 16, maxHeight: 16, alignment: .bottom)
-        .padding(.bottom, 4)
+        gradient
+            .mask(
+                HStack(alignment: .bottom, spacing: CGFloat(seperatorWidth)) {
+                    ForEach(Array(audioManager.data.enumerated()), id: \.offset) { _, datum in
+                        RoundedRectangle(cornerRadius: 1)
+                            .frame(width: calculatedWidth, height: CGFloat(min(datum*13, 13))+1)
+                    }
+                }
+                .frame(minWidth: CGFloat(width), idealWidth: CGFloat(width), maxWidth: CGFloat(width), minHeight: 16, idealHeight: 16, maxHeight: 16, alignment: .bottom)
+                .padding(.bottom, 4)
+            )
+        .drawingGroup()
         .onAppear {
             gradient = VisualizerView.createGradient(colorString: gradientColors, gradientStart: gradStart, gradientEnd: gradEnd)
         }
