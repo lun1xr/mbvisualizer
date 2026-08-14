@@ -60,7 +60,7 @@ struct SettingsView: View {
                         Text("Bar Count: ")
                             .frame(minWidth: 120, alignment: .leading)
                         TextField("#bars", value: $barCount, format: .number)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
                                 if barCount != Defaults.BARCOUNT {
                                     Button("Reset", systemImage: "arrow.clockwise") {
@@ -78,7 +78,7 @@ struct SettingsView: View {
                         Text("Width: ")
                             .frame(minWidth: 120, alignment: .leading)
                         TextField("#width", value: $width, format: .number)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
                                 if width != Defaults.WIDTH {
                                     Button("Reset", systemImage: "arrow.clockwise") {
@@ -96,7 +96,7 @@ struct SettingsView: View {
                         Text("Seperator Width: ")
                             .frame(minWidth: 120, alignment: .leading)
                         TextField("#height", value: $seperatorWidth, format: .number)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
                                 if seperatorWidth != Defaults.SEPERATORWIDTH {
                                     Button("Reset", systemImage: "arrow.clockwise") {
@@ -160,7 +160,7 @@ struct SettingsView: View {
                             Text("Color \(offset + 1): ")
                                 .frame(minWidth: 120, alignment: .leading)
                             TextField("#FFFFFF", text: $gradientColorArray[offset])
-                                .textFieldStyle(.bordered)
+                                .textFieldStyle(.roundedBorder)
                             Spacer()
                                 .frame(width: 13)
                             RoundedRectangle(cornerRadius: 5)
@@ -174,7 +174,7 @@ struct SettingsView: View {
                         Text("Attack: ")
                             .frame(minWidth: 120, alignment: .leading)
                         TextField("#attack", value: $attack, format: .number)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
                                 if attack != Defaults.ATTACK {
                                     Button("Reset", systemImage: "arrow.clockwise") {
@@ -192,7 +192,7 @@ struct SettingsView: View {
                         Text("Decay: ")
                             .frame(minWidth: 120, alignment: .leading)
                         TextField("#decay", value: $decay, format: .number)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
                                 if decay != Defaults.DECAY {
                                     Button("Reset", systemImage: "arrow.clockwise") {
@@ -210,7 +210,7 @@ struct SettingsView: View {
                         Text("Cieling Multiplier: ")
                             .frame(minWidth: 120, alignment: .leading)
                         TextField("#cieling", value: $cieling, format: .number)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .overlay(alignment: .trailing) {
                                 if cieling != Defaults.CIELING {
                                     Button("Reset", systemImage: "arrow.clockwise") {
@@ -230,7 +230,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Audio Data Path (ex. Cava):")
                         TextField("/Path/To/Audio/Data/Socket", text: $audioDataPath)
-                            .textFieldStyle(.bordered)
+                            .textFieldStyle(.roundedBorder)
                             .focused($focusedField)
                             .disabled(coreAudioEnabled)
                             .foregroundStyle(coreAudioEnabled ? .secondary : .primary)
