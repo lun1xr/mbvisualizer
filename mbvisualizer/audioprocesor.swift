@@ -20,7 +20,7 @@ class AudioProcesor {
         return window
     }()
 
-    static func fft(data: UnsafePointer<Float>, aTable: [Float], setup: OpaquePointer, cielingMultiplier: Float, barCount: Int) -> [Float] {
+    static func dfft(data: UnsafePointer<Float>, aTable: [Float], setup: OpaquePointer, cielingMultiplier: Float, barCount: Int) -> [Float] {
         var realIn = [Float](repeating: 0, count: fftSize)
         var imagIn = [Float](repeating: 0, count: fftSize)
 

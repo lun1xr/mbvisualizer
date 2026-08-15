@@ -183,8 +183,10 @@ final class AudioManager: ObservableObject {
         guard let channelData = buffer.floatChannelData?[0] else { print("No channel data"); return }
         let frames = buffer.frameLength
         guard frames >= 512 else { print("Frame count incorrect. Expected at least 512, actual: \(frames)"); return }
-        
-        let fftMagnitudes = AudioProcesor.fft(data: channelData, aTable: aTable, setup: fftSetup!, cielingMultiplier: Float(cielingMultiplier), barCount: barCount)
+        if barCount == 0 || cielingMultiplier == 0 || attack == 0 || decay == 0 {
+            return
+        }
+        let fftMagnitudes = AudioProcesor.dfft(data: channelData, aTable: aTable, setup: fftSetup!, cielingMultiplier: Float(cielingMultiplier), barCount: barCount)
         lock.lock()
         if latestData.count > 0 {
             lastFrameData = latestData

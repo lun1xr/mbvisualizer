@@ -37,8 +37,8 @@ class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
         if NSApp.windows.isEmpty {
             NSApp.setActivationPolicy(.prohibited)
         }
-        
-        visStatusItem = NSStatusBar.system.statusItem(withLength: 50)
+        let savedWidth = UserDefaults.standard.object(forKey: "Width") as? Int ?? Defaults.WIDTH
+        visStatusItem = NSStatusBar.system.statusItem(withLength: CGFloat(savedWidth))
         
         let hostingView = NSHostingView(rootView: VisualizerView().frame(minWidth: 25, idealWidth: 50, maxWidth: 100, minHeight: 22, idealHeight: 22, maxHeight: 22))
                 hostingView.translatesAutoresizingMaskIntoConstraints = false

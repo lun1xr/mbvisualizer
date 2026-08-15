@@ -19,7 +19,7 @@ public class Defaults {
     static let CIELING: Double = 1.0
     static let WIDTH: Int = 50
     static let SEPERATORWIDTH: Int = 1
-    static let GRADIENTCOLORS: [String] = ["#FFFFFF"]
+    static let GRADIENTCOLORS: [StringColor] = [StringColor(hexstring: "#FFFFFF")]
     static let GRADSTART: String = "top"
     static let GRADEND: String = "bottom"
 }
@@ -37,7 +37,7 @@ struct SettingsView: View {
     @AppStorage("GradientStart") var gradStart: String = "top"
     @AppStorage("GradientEnd") var gradEnd: String = "bottom"
     @FocusState var focusedField
-    @State var gradientColorArray: [String] = []
+    @State var gradientColorArray: [StringColor] = []
     let startEndOptions: [String] = [
         "top",
         "bottom",
@@ -52,8 +52,10 @@ struct SettingsView: View {
         VStack(alignment: .leading) {
             Text("Audio Visualizer Settings")
                 .font(.title)
+                .padding(.horizontal)
             Text("v0.1.0 - Nonfunctional features: socket")
                 .font(.caption)
+                .padding(.horizontal)
             List {
                 Section("Appearance") {
                     HStack {
@@ -124,7 +126,7 @@ struct SettingsView: View {
                             .labelStyle(.iconOnly)
                         }
                         Button("", systemImage: "rectangle.stack.badge.plus") {
-                            gradientColorArray.append("#FFFFFF")
+                            gradientColorArray.append(StringColor(hexstring: "#FFFFFF"))
                         }
                         .labelStyle(.iconOnly)
                         Button("", systemImage: "rectangle.stack.badge.minus") {
@@ -159,13 +161,11 @@ struct SettingsView: View {
                         HStack {
                             Text("Color \(offset + 1): ")
                                 .frame(minWidth: 120, alignment: .leading)
-                            TextField("#FFFFFF", text: $gradientColorArray[offset])
+                            TextField("#FFFFFF", text: $gradientColorArray[offset].hexstring)
                                 .textFieldStyle(.roundedBorder)
                             Spacer()
                                 .frame(width: 13)
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color(hex: gradientColorArray[offset]))
-                                .frame(width: 25)
+                            ColorPicker("", selection: $gradientColorArray[offset].hexcolor, supportsOpacity: true)
                         }
                     }
                 }
@@ -258,22 +258,25 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.automatic)
+            .listSectionSeparatorTint(.clear)
             .scrollIndicators(.never)
             Spacer()
             Text("No Copyright © 2026 Lun1xr")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal)
         }
-        .padding()
+        .padding(.vertical)
         .onChange(of: gradientColorArray) {
-            if gradientColorArray.allSatisfy({$0.count == 7 || $0.count == 9 || $0.count == 4}) {
-                gradientColors = gradientColorArray.joined(separator: "-")
+            let gcar = gradientColorArray.map(\.hexstring)
+            if gcar.allSatisfy({($0.count == 7 || $0.count == 9 || $0.count == 4) && $0.starts(with: "#")}) {
+                gradientColors = gcar.joined(separator: "-")
                 print("Changed: \(gradientColors)")
             }
         }
         .onAppear {
             print("On Start: \(gradientColors)")
-            gradientColorArray = gradientColors.split(separator: "-").map(String.init)
+            gradientColorArray = gradientColors.split(separator: "-").map { StringColor(hexstring: String($0)) }
         }
     }
 }
@@ -310,6 +313,9 @@ struct VisualizerView: View {
         .onChange(of: gradientColors) {
             gradient = VisualizerView.createGradient(colorString: gradientColors, gradientStart: gradStart, gradientEnd: gradEnd)
         }
+        .onChange(of: [gradStart, gradEnd]) {
+            gradient = VisualizerView.createGradient(colorString: gradientColors, gradientStart: gradStart, gradientEnd: gradEnd)
+        }
     }
     static func createGradient(colorString: String, gradientStart: String, gradientEnd: String) -> LinearGradient {
         let startPoint = resolveUnitPoints(point: gradientStart)
@@ -328,6 +334,22 @@ struct VisualizerView: View {
             case "bottomLeading": UnitPoint.bottomLeading
             case "bottomTrailing": UnitPoint.bottomTrailing
             default: UnitPoint.top
+        }
+    }
+}
+
+struct StringColor: Equatable {
+    static func == (lhs: borrowing StringColor, rhs: borrowing StringColor) -> Bool {
+        return lhs.hexcolor == rhs.hexcolor
+    }
+        
+    var hexstring: String
+    var hexcolor: Color {
+        get {
+            Color(hex: hexstring)
+        }
+        set {
+            hexstring = String(hex: newValue)
         }
     }
 }
@@ -356,6 +378,24 @@ extension Color {
             blue: Double(b) / 255,
             opacity: Double(a) / 255
         )
+    }
+}
+
+extension String {
+    init(hex: Color) {
+        let color = NSColor(hex).usingColorSpace(.sRGB)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color?.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        let r = red > 1.0 ? 255 : Int(red * 255)
+        let g = green > 1.0 ? 255 : Int(green * 255)
+        let b = blue > 1.0 ? 255 : Int(blue * 255)
+        let a = alpha > 1.0 ? 255 : Int(alpha * 255)
+        self = ""
+        self.append("#")
+        self.append(String(format: "%02x%02x%02x%02x", a, r, g, b))
     }
 }
 
