@@ -32,7 +32,7 @@ To build/install from source with ```xcodebuild``` (I think):
 
 ```bash
 
-git clone --depth 1 [https://github.com/lun1xr/mbvisualizer.git](https://github.com/lun1xr/mbvisualizer.git)
+git clone --depth 1 https://github.com/lun1xr/mbvisualizer.git
 
 cd mbvisualizer
 
