@@ -34,6 +34,19 @@ final class AudioManager: ObservableObject {
         startTimer()
     }
     
+    func reInit() {
+        stopTimer()
+        if let oldProcID = ioProcID {
+            print("Destroying Old Tap")
+            AudioDeviceDestroyIOProcID(aggregateID, oldProcID)
+            
+        }
+        AudioHardwareDestroyAggregateDevice(aggregateID)
+        AudioHardwareDestroyProcessTap(tapID)
+        setupAudio()
+        startTimer()
+    }
+    
     func setupAudio() {
         print("Audio Setup Started")
         let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
@@ -154,6 +167,10 @@ final class AudioManager: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 1.0/90.0, repeats: true) { [weak self] _ in
             self?.updateUI()
         }
+    }
+    
+    func stopTimer() {
+        timer?.invalidate()
     }
     
     func updateUI() {

@@ -78,7 +78,7 @@ class AudioProcesor {
         let f_sq = f * f
         let f_tes = f_sq * f_sq
         
-        let n: Float = 0.7943412 // R_A(1000)
+        let n: Float = 0.7943412 // R_A(1000) to float accuracy
         
         // A-weight function realisation https://en.wikipedia.org/wiki/A-weighting#A
         let a_sq: Float = 20.6 * 20.6

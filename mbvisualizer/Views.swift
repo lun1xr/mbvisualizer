@@ -316,6 +316,9 @@ struct VisualizerView: View {
         .onChange(of: [gradStart, gradEnd]) {
             gradient = VisualizerView.createGradient(colorString: gradientColors, gradientStart: gradStart, gradientEnd: gradEnd)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .restartSinkRequested)) { _ in
+            audioManager.reInit()
+        }
     }
     static func createGradient(colorString: String, gradientStart: String, gradientEnd: String) -> LinearGradient {
         let startPoint = resolveUnitPoints(point: gradientStart)

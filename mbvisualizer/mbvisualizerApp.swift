@@ -39,9 +39,8 @@ class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
         }
         let savedWidth = UserDefaults.standard.object(forKey: "Width") as? Int ?? Defaults.WIDTH
         visStatusItem = NSStatusBar.system.statusItem(withLength: CGFloat(savedWidth))
-        
         let hostingView = NSHostingView(rootView: VisualizerView().frame(minWidth: 25, idealWidth: 50, maxWidth: 100, minHeight: 22, idealHeight: 22, maxHeight: 22))
-                hostingView.translatesAutoresizingMaskIntoConstraints = false
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
         if let button = visStatusItem?.button {
             button.addSubview(hostingView)
             NSLayoutConstraint.activate([
@@ -55,6 +54,8 @@ class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Open Settings", action: #selector(openSettings), keyEquivalent: "o"))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Restart Audio Sink", action: #selector(restartSinkPipeline), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         
         visStatusItem?.menu = menu
@@ -66,4 +67,11 @@ class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         showWindow(id: "settings-window")
     }
+    @objc func restartSinkPipeline() {
+        NotificationCenter.default.post(name: .restartSinkRequested, object: nil)
+    }
+}
+
+extension Notification.Name {
+    static let restartSinkRequested = Notification.Name("restartSinkRequested")
 }
