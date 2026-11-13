@@ -8,6 +8,7 @@
 import SwiftUI
 import AppKit
 import Cocoa
+import SwiftData
 
 @main
 struct mbvisualizerApp: App {
@@ -16,6 +17,7 @@ struct mbvisualizerApp: App {
     @Environment(\.openWindow) var showWindow
     @State var bars: String = ""
     var body: some Scene {
+        let _ = (appDelegate.showWindow = self.showWindow)
         Window("Settings Window",id: "settings-window") {
             SettingsView()
         }
@@ -23,11 +25,12 @@ struct mbvisualizerApp: App {
         .onChange(of: width) {
             appDelegate.updateWidth(CGFloat(width))
         }
+        .modelContainer(SharedDataManager.shared.container)
     }
 }
 
 class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
-    @Environment(\.openWindow) var showWindow
+    var showWindow: OpenWindowAction?
     var visStatusItem: NSStatusItem!
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         NSApp.setActivationPolicy(.prohibited)
@@ -39,7 +42,7 @@ class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
         }
         let savedWidth = UserDefaults.standard.object(forKey: "Width") as? Int ?? Defaults.WIDTH
         visStatusItem = NSStatusBar.system.statusItem(withLength: CGFloat(savedWidth))
-        let hostingView = NSHostingView(rootView: VisualizerView().frame(minWidth: 25, idealWidth: 50, maxWidth: 100, minHeight: 22, idealHeight: 22, maxHeight: 22))
+        let hostingView = NSHostingView(rootView: VisualizerView().modelContainer(SharedDataManager.shared.container).frame(minWidth: 25, idealWidth: 50, maxWidth: 100, minHeight: 22, idealHeight: 22, maxHeight: 22))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         if let button = visStatusItem?.button {
             button.addSubview(hostingView)
@@ -65,10 +68,25 @@ class VisualizerBarItemDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func openSettings() {
         NSApp.setActivationPolicy(.regular)
-        showWindow(id: "settings-window")
+        showWindow?(id: "settings-window")
     }
     @objc func restartSinkPipeline() {
         NotificationCenter.default.post(name: .restartSinkRequested, object: nil)
+    }
+}
+
+@MainActor
+final class SharedDataManager {
+    static let shared = SharedDataManager()
+    let container: ModelContainer
+    private init() {
+        do {
+            container = try ModelContainer(for: ControlPoint.self)
+            let context = container.mainContext
+            try context.save()
+        } catch {
+            fatalError(":(")
+        }
     }
 }
 

@@ -11,26 +11,36 @@ import Accelerate
 import AVFoundation
 import SwiftUI
 import Combine
+import SwiftData
 
 final class AudioManager: ObservableObject {
-    @Published var data: [Float] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    public static let shared: AudioManager = .init()
+    @Published var data: [Float] = [Float](repeating: 0, count: 10)
     @AppStorage("BarCount") private var barCount: Int = 10
     @AppStorage("Cieling") private var cielingMultiplier: Double = 1.0
     @AppStorage("Decay") private var decay: Double = 0.1
     @AppStorage("Attack") private var attack: Double = 0.9
+    @AppStorage("SampleRate") var _sameplerate: Float64 = 0
+    
+    private var modelContext: ModelContext?
+    
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioDeviceID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var tapFormat: AudioStreamBasicDescription?
     private let lock = NSLock()
     private var newDataAvailable: Bool = false
-    private var lastFrameData: [Float] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    private var lastFrameData: [Float] = [Float](repeating: 0, count: 10)
     private var latestData: [Float] = []
     private var timer: Timer?
+    private var fTable: [Float] = []
     private var aTable: [Float] = []
+    private var biquadNeedsRecompute: Bool = false
+    private var biquad: vDSP.Biquad<Float>?
 
-    init() {
+    private init() {
         setupAudio()
+        createBiquad()
         startTimer()
     }
     
@@ -44,10 +54,11 @@ final class AudioManager: ObservableObject {
         AudioHardwareDestroyAggregateDevice(aggregateID)
         AudioHardwareDestroyProcessTap(tapID)
         setupAudio()
+        createBiquad()
         startTimer()
     }
     
-    func setupAudio() {
+    private func setupAudio() {
         print("Audio Setup Started")
         let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         tapDescription.uuid = UUID()
@@ -155,7 +166,9 @@ final class AudioManager: ObservableObject {
             return
         }
         
-        aTable = AudioProcesor.createAWFilterTable(Float(sampleRate))
+        _sameplerate = sampleRate
+        fTable = AudioProcesor.createFrequencyTable(Float(sampleRate))
+        aTable = AudioProcesor.createAWFilterTable(fTable)
 
         guard AudioDeviceStart(aggregateID, ioProcID) == noErr else {
             print("Failed to start aggregate device")
@@ -163,17 +176,19 @@ final class AudioManager: ObservableObject {
         }
     }
     
-    func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0/90.0, repeats: true) { [weak self] _ in
+    private func startTimer() {
+        let newTimer = Timer(timeInterval: 1.0/90.0, repeats: true) { [weak self] _ in
             self?.updateUI()
         }
+        RunLoop.main.add(newTimer, forMode: .common)
+        timer = newTimer
     }
     
-    func stopTimer() {
+    private func stopTimer() {
         timer?.invalidate()
     }
     
-    func updateUI() {
+    private func updateUI() {
         lock.lock()
         guard newDataAvailable else {
             lock.unlock()
@@ -183,9 +198,12 @@ final class AudioManager: ObservableObject {
         newDataAvailable = false
         lock.unlock()
         data = temp
+        if biquadNeedsRecompute {
+            createBiquad()
+        }
     }
 
-    func handleIOProc(inInputData: UnsafePointer<AudioBufferList>) {
+    private func handleIOProc(inInputData: UnsafePointer<AudioBufferList>) {
         guard var asbd = tapFormat,
               let format = AVAudioFormat(streamDescription: &asbd),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inInputData, deallocator: nil)
@@ -194,21 +212,57 @@ final class AudioManager: ObservableObject {
         processAudioData(buffer: buffer)
     }
     
-    let fftSetup = vDSP_DFT_zop_CreateSetup(nil, 512, vDSP_DFT_Direction.FORWARD)
+    private let fftSetup = vDSP_DFT_zop_CreateSetup(nil, 512, vDSP_DFT_Direction.FORWARD)
+    
+    func setModelContext(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+    
+    private func fetchControlPoints() -> [ControlPoint] {
+        let sortDescriptor = [SortDescriptor<ControlPoint>(\ControlPoint.order)]
+        let fetchDescriptor = FetchDescriptor<ControlPoint>(sortBy: sortDescriptor)
+        do {
+            return try modelContext?.fetch(fetchDescriptor) ?? []
+        } catch {
+            return []
+        }
+    }
+    
+    func setBiquadDirty() {
+        biquadNeedsRecompute = true
+    }
+    
+    private func createBiquad() {
+        let controlPoints = fetchControlPoints()
+        if controlPoints.isEmpty {
+            biquad = nil
+        } else {
+            biquad = AudioProcesor.createParaBiquad(Float(_sameplerate), ctrl_pts: controlPoints)
+        }
+        biquadNeedsRecompute = false
+    }
 
-    func processAudioData(buffer: AVAudioPCMBuffer) {
+    private func processAudioData(buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { print("No channel data"); return }
         let frames = buffer.frameLength
         guard frames >= 512 else { print("Frame count incorrect. Expected at least 512, actual: \(frames)"); return }
         if barCount == 0 || cielingMultiplier == 0 || attack == 0 || decay == 0 {
             return
         }
-        let fftMagnitudes = AudioProcesor.dfft(data: channelData, aTable: aTable, setup: fftSetup!, cielingMultiplier: Float(cielingMultiplier), barCount: barCount)
-        lock.lock()
-        if latestData.count > 0 {
-            lastFrameData = latestData
+        if channelData.pointee.isZero {
+            lock.lock()
+            if latestData.count > 0 {
+                lastFrameData = latestData
+            }
+            latestData = .init(repeating: 0, count: barCount)
+        } else {
+            let bar_magnitudes = AudioProcesor.dfft_filtered(data: channelData, fTable: fTable, aTable: aTable, setup: fftSetup!, cielingMultiplier: Float(cielingMultiplier), biquad: &biquad, barCount: barCount)
+            lock.lock()
+            if latestData.count > 0 {
+                lastFrameData = latestData
+            }
+            latestData = bar_magnitudes
         }
-        latestData = fftMagnitudes
         AudioProcesor.lerp(attack: Float(attack), decay: Float(decay), old: lastFrameData, new: &latestData)
         newDataAvailable = true
         lock.unlock()

@@ -9,10 +9,10 @@ import SwiftUI
 import CoreAudio
 import Accelerate
 import Cocoa
+import SwiftData
+import Charts
 
 public class Defaults {
-    static let AUDIODATAPATH: String = ""
-    static let COREAUDIOENABLED: Bool = true
     static let BARCOUNT: Int = 10
     static let DECAY: Double = 0.1
     static let ATTACK: Double = 0.9
@@ -24,9 +24,47 @@ public class Defaults {
     static let GRADEND: String = "bottom"
 }
 
+@Model
+final public class ControlPoint {
+    var order: Int
+    var frequency: Float
+    var gain: Float
+    var q: qVal
+    init(order: Int, frequency: Float, gain: Float, q: qVal) {
+        self.order = order
+        self.frequency = frequency
+        self.gain = gain
+        self.q = q
+    }
+    func getGraphingValues() -> (frequency: Float, gain: Float, band: Float) {
+        return (self.frequency, self.gain, self.q.band)
+    }
+}
+
+public enum qVal: Float, Codable {
+    case gen = 0.7
+    case spec = 1.4
+    case vspec = 3.5
+    case spike = 6.0
+    var band: Float {
+        switch self {
+            case .gen: return 1.917
+            case .spec: return 1.00976
+            case .vspec: return 0.411
+            case .spike: return 0.24
+        }
+    }
+    var next: qVal {
+        switch self {
+        case .gen: return .spec
+        case .spec: return .vspec
+        case .vspec: return .spike
+        case .spike: return .gen
+        }
+    }
+}
+
 struct SettingsView: View {
-    @AppStorage("AudioDataPath") var audioDataPath: String = ""
-    @AppStorage("CoreAudioEnabled") var coreAudioEnabled: Bool = true
     @AppStorage("BarCount") var barCount: Int = 10
     @AppStorage("Decay") var decay: Double = 0.1
     @AppStorage("Attack") var attack: Double = 0.9
@@ -36,8 +74,10 @@ struct SettingsView: View {
     @AppStorage("GradientColors") var gradientColors: String = "#FFFFFF"
     @AppStorage("GradientStart") var gradStart: String = "top"
     @AppStorage("GradientEnd") var gradEnd: String = "bottom"
+    
     @FocusState var focusedField
     @State var gradientColorArray: [StringColor] = []
+    
     let startEndOptions: [String] = [
         "top",
         "bottom",
@@ -53,7 +93,7 @@ struct SettingsView: View {
             Text("Audio Visualizer Settings")
                 .font(.title)
                 .padding(.horizontal)
-            Text("v0.1.0 - Nonfunctional features: socket")
+            Text("v0.2.0")
                 .font(.caption)
                 .padding(.horizontal)
             List {
@@ -224,36 +264,18 @@ struct SettingsView: View {
                         Stepper("", value: $cieling, in: 0.0...2.0, step: 0.01)
                             .frame(width: 30)
                     }
-                }
-                Section("Audio Path (Pick One)") {
-                    Toggle("Use CoreAudio", isOn: $coreAudioEnabled)
-                    HStack {
-                        Text("Audio Data Path (ex. Cava):")
-                        TextField("/Path/To/Audio/Data/Socket", text: $audioDataPath)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($focusedField)
-                            .disabled(coreAudioEnabled)
-                            .foregroundStyle(coreAudioEnabled ? .secondary : .primary)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                coreAudioEnabled = false
-                                focusedField = true
-                            }
+                    VStack(alignment: .leading) {
+                        Text("Parametric EQ: ")
+                            .listRowSeparator(.hidden, edges: .bottom)
+                        ParametricView()
+                            .padding()
                     }
                 }
                 Section("Reset") {
-                    Button("Load Defaults") {
-                        audioDataPath = Defaults.AUDIODATAPATH
-                        coreAudioEnabled = Defaults.COREAUDIOENABLED
-                        attack = Defaults.ATTACK
-                        decay = Defaults.DECAY
-                        barCount = Defaults.BARCOUNT
-                        cieling = Defaults.CIELING
-                        gradientColorArray = Defaults.GRADIENTCOLORS
-                        gradStart = Defaults.GRADSTART
-                        gradEnd = Defaults.GRADEND
-                        seperatorWidth = Defaults.SEPERATORWIDTH
-                        width = Defaults.WIDTH
+                    Button("Load All Defaults") {
+                        loadGradientDefaults()
+                        loadAppearanceDefaults()
+                        loadAudioResponseDefaults()
                     }
                 }
             }
@@ -279,11 +301,146 @@ struct SettingsView: View {
             gradientColorArray = gradientColors.split(separator: "-").map { StringColor(hexstring: String($0)) }
         }
     }
+    func loadAppearanceDefaults() {
+        barCount = Defaults.BARCOUNT
+        seperatorWidth = Defaults.SEPERATORWIDTH
+        width = Defaults.WIDTH
+    }
+    func loadGradientDefaults() {
+        gradientColorArray = Defaults.GRADIENTCOLORS
+        gradStart = Defaults.GRADSTART
+        gradEnd = Defaults.GRADEND
+    }
+    func loadAudioResponseDefaults() {
+        attack = Defaults.ATTACK
+        decay = Defaults.DECAY
+        cieling = Defaults.CIELING
+    }
+}
+
+struct ParametricView: View {
+    @Query(sort: \ControlPoint.order) private var controlPoints: [ControlPoint]
+    @Environment(\.modelContext) private var modelContext
+    @AppStorage("SampleRate") var sameplerate: Float64 = 0
+    
+    @State private var currentHoverControlPoint: ControlPoint?
+    @State private var clickMonitor: Any?
+    
+    @StateObject private var audioManager: AudioManager = AudioManager.shared
+        
+    var body: some View {
+        let cPointsSampled = controlPoints.map({ $0.getGraphingValues() })
+        Chart {
+            AreaPlot(x: "x", yStart: "-20", yEnd: "parax") { x in
+                (
+                    yStart: -20,
+                    yEnd: approxParametric(x: x, cPointsSampled)
+                )
+            }
+            .foregroundStyle(Color.blue.opacity(0.5))
+            LinePlot(x: "x", y: "y") { x in
+                approxParametric(x: x, cPointsSampled)
+            }
+            .foregroundStyle(Color.blue)
+        }
+        .chartXScale(domain: 20...sameplerate/2, type: .log)
+        .chartYScale(domain: -20...20, type: .linear)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in 
+                if let proxyFrame = proxy.plotFrame {
+                    let frameRect = geometry[proxyFrame]
+                    let origin = frameRect.origin
+                    ZStack {
+                        Rectangle()
+                            .frame(width: frameRect.width, height: frameRect.height)
+                            .position(x: frameRect.midX, y: frameRect.midY)
+                            .foregroundStyle(.clear)
+                            .allowsHitTesting(true)
+                            .contentShape(Rectangle())
+                            .onTapGesture(coordinateSpace: .local) { gesture in
+                                print("Tap registered")
+                                let controlFreq = (proxy.value(atX: gesture.x-origin.x, as: Float.self) ?? 20).clamped(20...Float(self.sameplerate)/2)
+                                let controlGain = (proxy.value(atY: gesture.y-origin.y, as: Float.self) ?? 0).clamped(-20...20)
+                                let controlPoint = ControlPoint(order: controlPoints.count,frequency: controlFreq, gain: controlGain, q: .gen)
+                                modelContext.insert(controlPoint)
+                                audioManager.setBiquadDirty()
+                            }
+                        ForEach(controlPoints) { controlPoint in
+                            ControlPointHandle()
+                                .allowsHitTesting(true)
+                                .onTapGesture(count: 2) {
+                                    let current = controlPoint.q
+                                    controlPoint.q = current.next
+                                    audioManager.setBiquadDirty()
+                                }
+                                .onHover { didEnter in
+                                    if didEnter {
+                                        currentHoverControlPoint = controlPoint
+                                    } else {
+                                        currentHoverControlPoint = nil
+                                    }
+                                }
+                                .gesture(
+                                    DragGesture(minimumDistance: 0, coordinateSpace: .named("parametric"))
+                                        .onChanged { value in
+                                            controlPoint.frequency = (proxy.value(atX: value.location.x-origin.x, as: Float.self) ?? 0).clamped(20...Float(self.sameplerate)/2)
+                                            controlPoint.gain = (proxy.value(atY: value.location.y-origin.y, as: Float.self) ?? 0).clamped(-20...20)
+                                            audioManager.setBiquadDirty()
+                                        }
+                                )
+                                .position(
+                                    x: origin.x + (proxy.position(forX: controlPoint.frequency) ?? 0),
+                                    y: origin.y + (proxy.position(forY: controlPoint.gain) ?? 0)
+                                )
+                        }
+                    }
+                    .onAppear {
+                        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseUp, handler: { event in
+                            if let hoverPoint = currentHoverControlPoint {
+                                modelContext.delete(hoverPoint)
+                                currentHoverControlPoint = nil
+                                audioManager.setBiquadDirty()
+                            }
+                            return event
+                        })
+                    }
+                    .onDisappear {
+                        if let clickMonitor = clickMonitor {
+                            NSEvent.removeMonitor(clickMonitor)
+                        }
+                    }
+                    .coordinateSpace(name: "parametric")
+                }
+            }
+        }
+    }
+    nonisolated func approxParametric(x: Double, _ sampled: [(frequency: Float, gain: Float, band: Float)]) -> Double {
+        var result: Double = 0.0
+        for controlPoint in sampled {
+            let inexpnum = log2(x/Double(controlPoint.frequency))
+            let inexpdenom = controlPoint.band
+            let indexp = -0.5 * pow(inexpnum/Double(inexpdenom), 2)
+            let fullexp = Double(controlPoint.gain)*exp(indexp)
+            result += fullexp
+        }
+        return result
+    }
+}
+
+struct ControlPointHandle: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .frame(width: 20, height: 20)
+                .foregroundStyle(.ultraThinMaterial)
+            Circle()
+                .frame(width: 15, height: 15)
+                .foregroundColor(.blue)
+        }
+    }
 }
 
 struct VisualizerView: View {
-    @AppStorage("AudioDataPath") private var audioDataPath: String = ""
-    @AppStorage("CoreAudioEnabled") private var coreAudioEnabled: Bool = true
     @AppStorage("Decay") private var decay: Double = 0.2
     @AppStorage("Width") private var width: Int = 50
     @AppStorage("SeperatorWidth") private var seperatorWidth: Int = 1
@@ -291,7 +448,8 @@ struct VisualizerView: View {
     @AppStorage("GradientStart") private var gradStart: String = "top"
     @AppStorage("GradientEnd") private var gradEnd: String = "bottom"
     @State private var gradient: LinearGradient = LinearGradient(colors: [.white], startPoint: .top, endPoint: .bottom)
-    @StateObject private var audioManager = AudioManager.init()
+    @Environment(\.modelContext) private var modelContext
+    @StateObject private var audioManager = AudioManager.shared
     static let CIELING: CGFloat = 1.0
     var body: some View {
         let calculatedWidth = CGFloat(width - seperatorWidth * (audioManager.data.count - 1)) / CGFloat(audioManager.data.count)
@@ -308,6 +466,7 @@ struct VisualizerView: View {
             )
         .drawingGroup()
         .onAppear {
+            audioManager.setModelContext(modelContext: modelContext)
             gradient = VisualizerView.createGradient(colorString: gradientColors, gradientStart: gradStart, gradientEnd: gradEnd)
         }
         .onChange(of: gradientColors) {
@@ -381,6 +540,12 @@ extension Color {
             blue: Double(b) / 255,
             opacity: Double(a) / 255
         )
+    }
+}
+
+extension Comparable {
+    func clamped(_ limits: ClosedRange<Self>) -> Self {
+        return min(max(self, limits.lowerBound), limits.upperBound)
     }
 }
 

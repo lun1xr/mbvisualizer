@@ -20,15 +20,20 @@ class AudioProcesor {
         return window
     }()
 
-    static func dfft(data: UnsafePointer<Float>, aTable: [Float], setup: OpaquePointer, cielingMultiplier: Float, barCount: Int) -> [Float] {
+    static func dfft_filtered(data: UnsafePointer<Float>, fTable: [Float], aTable: [Float], setup: OpaquePointer, cielingMultiplier: Float, biquad: inout vDSP.Biquad<Float>?, barCount: Int) -> [Float] {
         var realIn = [Float](repeating: 0, count: fftSize)
         var imagIn = [Float](repeating: 0, count: fftSize)
 
         var realOut = [Float](repeating: 0, count: fftSize)
         var imagOut = [Float](repeating: 0, count: fftSize)
-
+        
+        let dataBuffer = UnsafeBufferPointer(start: data, count: fftSize)
+        var dataBufferArray = Array(dataBuffer)
+        
+        biquad?.apply(input: dataBufferArray, output: &dataBufferArray)
+        
         // Window before FFT to reduce spectral leakage into low/high bins.
-        vDSP_vmul(data, 1, hannWindow, 1, &realIn, 1, vDSP_Length(fftSize))
+        vDSP_vmul(dataBufferArray, 1, hannWindow, 1, &realIn, 1, vDSP_Length(fftSize))
 
         vDSP_DFT_Execute(setup, &realIn, &imagIn, &realOut, &imagOut)
 
@@ -36,7 +41,7 @@ class AudioProcesor {
         var magnitudes = [Float](repeating: 0, count: binCount)
         vDSP_zvabs(&complex, 1, &magnitudes, 1, vDSP_Length(binCount))
 
-        // Disp signal from first bin, drop for response prettiness
+        // Disp signal from first/last bin, drop for response prettiness
         magnitudes[0] = 0
         
         var aWeightedMagnitudes = [Float](repeating: 0, count: binCount)
@@ -64,20 +69,16 @@ class AudioProcesor {
         return
     }
     
-    static func createAWFilterTable(_ sameplRate: Float) -> [Float] {
-        var result = [Float](repeating: 0, count: binCount)
+    static func createFrequencyTable(_ sameplRate: Float) -> [Float] {
+        var fTable = [Float](repeating: 0, count: binCount)
         for i in 0..<binCount {
-            let binFreq = Float(i) * sameplRate / Float(fftSize)
-            result[i] = calcAW_F(binFreq)
+            fTable[i] = Float(i) * sameplRate / Float(fftSize)
         }
-        return result
+        return fTable
     }
     
     /// Normalized by 1000 (precomputed)
-    private static func calcAW_F(_ f: Float) -> Float {
-        let f_sq = f * f
-        let f_tes = f_sq * f_sq
-        
+    static func createAWFilterTable(_ fTable: [Float]) -> [Float] {
         let n: Float = 0.7943412 // R_A(1000) to float accuracy
         
         // A-weight function realisation https://en.wikipedia.org/wiki/A-weighting#A
@@ -85,11 +86,47 @@ class AudioProcesor {
         let b_sq: Float = 107.7 * 107.7
         let c_sq: Float = 737.9 * 737.9
         let d_sq: Float = 12194 * 12194
-        let num = f_tes * d_sq
-        let den = (f_sq + a_sq) * sqrt((f_sq + b_sq) * (f_sq + c_sq)) * (f_sq + d_sq)
         
-        let prenormal_f = num/den
-        return prenormal_f/n
+        // f tables
+        let inter_sq = vDSP.multiply(fTable, fTable)
+        let inter_tes = vDSP.multiply(inter_sq, inter_sq)
+        
+        // num
+        let num = vDSP.multiply(d_sq, inter_tes)
+        
+        // den
+        let den1 = vDSP.add(a_sq, inter_sq)
+        let den2_1 = vDSP.add(b_sq, inter_sq)
+        let den2_2 = vDSP.add(c_sq, inter_sq)
+        let den2_3 = vDSP.multiply(den2_1, den2_2)
+        let den2 = vForce.sqrt(den2_3)
+        let den3 = vDSP.add(d_sq, inter_sq)
+        let den_mid = vDSP.multiply(den2, den3)
+        let den = vDSP.multiply(den1, den_mid)
+        
+        //normalization
+        let prenormal = vDSP.divide(num, den)
+        let normal = vDSP.divide(prenormal, n)
+        
+        return normal
+    }
+    
+    static func createParaBiquad(_ sameplRate: Float, ctrl_pts: [ControlPoint]) -> vDSP.Biquad<Float>? {
+        var coeffs: [Double] = []
+        for pt in ctrl_pts {
+            //intermediates
+            let a = pow(10, Double(pt.gain)/40.0)
+            let om = 2 * Double.pi * (Double(pt.frequency) / Double(sameplRate))
+            let alpha = sin(om) / (2 * Double(pt.q.rawValue))
+            let a0 = (1 + alpha / a)
+            //coefficients
+            coeffs.append((1 + alpha * a)/a0)
+            coeffs.append((-2 * cos(om))/a0)
+            coeffs.append((1 - alpha * a)/a0)
+            coeffs.append((-2 * cos(om))/a0)
+            coeffs.append((1 - alpha/a)/a0)
+        }
+        return vDSP.Biquad(coefficients: coeffs, channelCount: 1, sectionCount: UInt(ctrl_pts.count), ofType: Float.self)
     }
 
     private static func logBinnedMagnitudes(_ magnitudes: [Float], barCount: Int) -> [Float] {
@@ -118,7 +155,7 @@ class AudioProcesor {
             var max: Float = 0
             var avg: Float = 0
             for bin in start..<end {
-                if bar != bars.count-1 {
+                if bar != barCount-1 {
                     let val = magnitudes[bin]
                     if val > max {
                         max = val
